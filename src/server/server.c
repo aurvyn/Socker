@@ -17,7 +17,7 @@
 #include "notifier.h"
 
 #define BACKLOG 10
-#define MAXDATASIZE 100 // max number of bytes we can get at once
+#define PACKET_SIZE 1024
 #define HOSTNAME_SIZE 1024
 
 void sigchld_handler(int s) {
@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
 
 	if (!is_tcp) { // --- UDP ---
 		print_udp_start(s);
-		while (numbytes = collect_from(sockfd, &response, (struct sockaddr *)&their_addr, &addr_len)) {
+		while (numbytes = collect_from(sockfd, &response, PACKET_SIZE, (struct sockaddr *)&their_addr, &addr_len)) {
 			printf("Received the following message from client:\n\n\"%s\"\n\n", response);
 		}
 		freeaddrinfo(servinfo);
@@ -129,14 +129,14 @@ int main(int argc, char *argv[]) {
 
 		if (!fork()) { // make child to handle client requests
 			printf("Now listening for incoming messages...\n\n");
-			while (numbytes = collect(new_fd, &response)) {
+			while (numbytes = collect(new_fd, &response, PACKET_SIZE)) {
 				printf("Received the following message from client:\n\n\"%s\"\n\n", response);
 				if (!strcmp(response, ";;;")) break;
 				printf("Now sending message back having changed the string to upper case...\n\n");
 				for (int i = 0; i < numbytes; i++) {
 					response[i] = toupper(response[i]);
 				}
-				relay(new_fd, response, numbytes);
+				relay(new_fd, response, numbytes, PACKET_SIZE);
 			}
 			print_tcp_end();
 			close(new_fd);

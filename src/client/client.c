@@ -14,6 +14,8 @@
 #include "../socker.h"
 #include "notifier.h"
 
+#define PACKET_SIZE 1024
+
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa) {
 	if (sa->sa_family == AF_INET) {
@@ -61,7 +63,7 @@ int main(int argc, char *argv[]) {
 		print_startup_udp(argv[2], argv[3]);
 		while (readLine(&message, &size, &len)) {
 			printf("\nSending message to server...\n\n");
-			relay_to(sockfd, message, len, p->ai_addr, p->ai_addrlen);
+			relay_to(sockfd, message, len, PACKET_SIZE, p->ai_addr, p->ai_addrlen);
 			if (!strcmp(message, ";;;")) break;
 		}
 		print_shutdown();
@@ -79,9 +81,9 @@ int main(int argc, char *argv[]) {
 
 	while (readLine(&message, &size, &len)) {
 		printf("\nSending message to server...\n\n");
-		if (!relay(sockfd, message, len)) break;
+		if (!relay(sockfd, message, len, PACKET_SIZE)) break;
 		if (!strcmp(message, ";;;")) break;
-		if (!(numbytes = collect(sockfd, &response))) break;
+		if (!(numbytes = collect(sockfd, &response, PACKET_SIZE))) break;
 		printf("Received response from server of\n\n\"%s\"\n\n", response);
 	}
 	print_shutdown();

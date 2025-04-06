@@ -1,17 +1,22 @@
 #pragma once
-#define PACKET_SIZE 1024
+#define HEADER_SIZE 32
 
-bool relay(int sockfd, const void *buf, size_t len) {
-	char header[PACKET_SIZE];
+bool relay(
+	int sockfd,
+	const void *buf,
+	size_t len,
+	size_t packet_size
+) {
+	char header[HEADER_SIZE];
 	sprintf(header, "%zu", len);
-	if (send(sockfd, header, PACKET_SIZE, 0) == -1) {
+	if (send(sockfd, header, HEADER_SIZE, 0) == -1) {
 		perror("relay: send (header)");
 		return false;
 	}
 	size_t remaining, numbytes;
-	for (size_t offset = 0; offset < len; offset += PACKET_SIZE) {
+	for (size_t offset = 0; offset < len; offset += packet_size) {
 		remaining = len - offset;
-		size_t to_send = remaining < PACKET_SIZE ? remaining : PACKET_SIZE;
+		size_t to_send = remaining < packet_size ? remaining : packet_size;
 		numbytes = send(sockfd, buf + offset, to_send, 0);
 		if (numbytes == -1) {
 			perror("relay: send");
@@ -21,16 +26,23 @@ bool relay(int sockfd, const void *buf, size_t len) {
 	return true;
 }
 
-bool relay_to(int sockfd, const void *buf, size_t len, const struct sockaddr *dest_addr, socklen_t addrlen) {
-	char header[PACKET_SIZE];
+bool relay_to(
+	int sockfd,
+	const void *buf,
+	size_t len,
+	size_t packet_size,
+	const struct sockaddr *dest_addr,
+	socklen_t addrlen
+) {
+	char header[HEADER_SIZE];
 	sprintf(header, "%zu", len);
-	if (sendto(sockfd, header, PACKET_SIZE, 0, dest_addr, addrlen) == -1) {
+	if (sendto(sockfd, header, HEADER_SIZE, 0, dest_addr, addrlen) == -1) {
 		perror("relay_to: sendto (header)");
 		return false;
 	}
 	int numbytes;
-	for (size_t offset = 0; offset < len; offset += PACKET_SIZE) {
-		numbytes = sendto(sockfd, buf + offset, PACKET_SIZE, 0, dest_addr, addrlen);
+	for (size_t offset = 0; offset < len; offset += packet_size) {
+		numbytes = sendto(sockfd, buf + offset, packet_size, 0, dest_addr, addrlen);
 		if (numbytes == -1) {
 			perror("relay_to: sendto");
 			return false;
@@ -39,18 +51,22 @@ bool relay_to(int sockfd, const void *buf, size_t len, const struct sockaddr *de
 	return true;
 }
 
-size_t collect(int sockfd, char **content) {
-	char header[PACKET_SIZE];
-	int numbytes = recv(sockfd, header, PACKET_SIZE, 0);
+size_t collect(
+	int sockfd,
+	char **content,
+	size_t packet_size
+) {
+	char header[HEADER_SIZE];
+	int numbytes = recv(sockfd, header, HEADER_SIZE, 0);
 	if (numbytes == -1) {
 		perror("collect: recv (header)");
 		return 0;
 	}
 	size_t remaining, len = atoi(header);
 	*content = realloc(*content, len + 1);
-	for (size_t offset = 0; offset < len; offset += PACKET_SIZE) {
+	for (size_t offset = 0; offset < len; offset += packet_size) {
 		remaining = len - offset;
-		size_t to_read = remaining < PACKET_SIZE ? remaining : PACKET_SIZE;
+		size_t to_read = remaining < packet_size ? remaining : packet_size;
 		numbytes = recv(sockfd, *content + offset, to_read, 0);
 		if (numbytes == -1) {
 			perror("collect: recv");
@@ -61,17 +77,23 @@ size_t collect(int sockfd, char **content) {
 	return len;
 }
 
-size_t collect_from(int sockfd, char **content, struct sockaddr *src_addr, socklen_t *addrlen) {
-	char header[PACKET_SIZE];
-	int numbytes = recvfrom(sockfd, header, PACKET_SIZE, 0, src_addr, addrlen);
+size_t collect_from(
+	int sockfd,
+	char **content,
+	size_t packet_size,
+	struct sockaddr *src_addr,
+	socklen_t *addrlen
+) {
+	char header[HEADER_SIZE];
+	int numbytes = recvfrom(sockfd, header, HEADER_SIZE, 0, src_addr, addrlen);
 	if (numbytes == -1) {
 		perror("collect_from: recvfrom (header)");
 		return 0;
 	}
 	size_t len = atoi(header);
 	*content = realloc(*content, len + 1);
-	for (size_t offset = 0; offset < len; offset += PACKET_SIZE) {
-		numbytes = recvfrom(sockfd, *content + offset, PACKET_SIZE, 0, src_addr, addrlen);
+	for (size_t offset = 0; offset < len; offset += packet_size) {
+		numbytes = recvfrom(sockfd, *content + offset, packet_size, 0, src_addr, addrlen);
 		if (numbytes == -1) {
 			perror("collect_from: recvfrom");
 			return 0;
