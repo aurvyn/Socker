@@ -62,11 +62,12 @@ size_t collect(
 		perror("collect: recv (header)");
 		return 0;
 	}
-	size_t remaining, len = atoi(header);
+	header[HEADER_SIZE - 1] = '\0';
+	size_t remaining, to_read, len = atoi(header);
 	*content = realloc(*content, len + 1);
 	for (size_t offset = 0; offset < len; offset += packet_size) {
 		remaining = len - offset;
-		size_t to_read = remaining < packet_size ? remaining : packet_size;
+		to_read = remaining < packet_size ? remaining : packet_size;
 		numbytes = recv(sockfd, *content + offset, to_read, 0);
 		if (numbytes == -1) {
 			perror("collect: recv");
@@ -90,10 +91,13 @@ size_t collect_from(
 		perror("collect_from: recvfrom (header)");
 		return 0;
 	}
-	size_t len = atoi(header);
+	header[HEADER_SIZE - 1] = '\0';
+	size_t remaining, to_read, len = atoi(header);
 	*content = realloc(*content, len + 1);
 	for (size_t offset = 0; offset < len; offset += packet_size) {
-		numbytes = recvfrom(sockfd, *content + offset, packet_size, 0, src_addr, addrlen);
+		remaining = len - offset;
+		to_read = remaining < packet_size ? remaining : packet_size;
+		numbytes = recvfrom(sockfd, *content + offset, to_read, 0, src_addr, addrlen);
 		if (numbytes == -1) {
 			perror("collect_from: recvfrom");
 			return 0;
