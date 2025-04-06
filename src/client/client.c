@@ -3,7 +3,6 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#include <errno.h>
 #include <string.h>
 #include <netdb.h>
 #include <sys/types.h>

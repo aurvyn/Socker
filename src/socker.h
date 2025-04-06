@@ -1,10 +1,19 @@
 #pragma once
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #define HEADER_SIZE 32
 #define HOSTNAME_SIZE 1024
 
-bool relay(
+static inline bool relay(
 	int sockfd,
-	const void *buf,
+	const char *buf,
 	size_t len,
 	size_t packet_size
 ) {
@@ -27,9 +36,9 @@ bool relay(
 	return true;
 }
 
-bool relay_to(
+static inline bool relay_to(
 	int sockfd,
-	const void *buf,
+	const char *buf,
 	size_t len,
 	size_t packet_size,
 	const struct sockaddr *dest_addr,
@@ -52,7 +61,7 @@ bool relay_to(
 	return true;
 }
 
-size_t collect(
+static inline size_t collect(
 	int sockfd,
 	char **content,
 	size_t packet_size
@@ -65,7 +74,7 @@ size_t collect(
 	}
 	header[HEADER_SIZE - 1] = '\0';
 	size_t remaining, to_read, len = atoi(header);
-	*content = realloc(*content, len + 1);
+	*content = (char*) realloc(*content, len + 1);
 	for (size_t offset = 0; offset < len; offset += packet_size) {
 		remaining = len - offset;
 		to_read = remaining < packet_size ? remaining : packet_size;
@@ -79,7 +88,7 @@ size_t collect(
 	return len;
 }
 
-size_t collect_from(
+static inline size_t collect_from(
 	int sockfd,
 	char **content,
 	size_t packet_size,
@@ -94,7 +103,7 @@ size_t collect_from(
 	}
 	header[HEADER_SIZE - 1] = '\0';
 	size_t remaining, to_read, len = atoi(header);
-	*content = realloc(*content, len + 1);
+	*content = (char*) realloc(*content, len + 1);
 	for (size_t offset = 0; offset < len; offset += packet_size) {
 		remaining = len - offset;
 		to_read = remaining < packet_size ? remaining : packet_size;
@@ -108,7 +117,7 @@ size_t collect_from(
 	return len;
 }
 
-bool readLine(char **line, size_t *size, size_t *length) {
+static inline bool readLine(char **line, size_t *size, size_t *length) {
 	while (1) {
 		printf("prompt> ");
 		size_t len = getline(line, size, stdin);
@@ -122,7 +131,7 @@ bool readLine(char **line, size_t *size, size_t *length) {
 	}
 }
 
-bool check_mode(char *mode) {
+static inline bool check_mode(char *mode) {
 	if (!strcmp(mode, "-u")) {
 		return false;
 	} else if (!strcmp(mode, "-t")) {
@@ -134,25 +143,25 @@ bool check_mode(char *mode) {
 }
 
 // get sockaddr, IPv4 or IPv6:
-void *get_in_addr(struct sockaddr *sa) {
+static inline void *get_in_addr(struct sockaddr *sa) {
 	if (sa->sa_family == AF_INET) {
 		return &(((struct sockaddr_in*)sa)->sin_addr);
 	}
 	return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
-void display_server_info(struct sockaddr *ai_addr, char *port) {
+static inline void display_server_info(struct sockaddr *ai_addr, char *port) {
 	char hostname[HOSTNAME_SIZE], addr[INET6_ADDRSTRLEN];
 	inet_ntop(ai_addr->sa_family, get_in_addr(ai_addr), addr, sizeof addr);
 	printf("Server on host %s/%s is listening on port %s\n\n", 
 		gethostname(hostname, HOSTNAME_SIZE) ? "unknown" : hostname,
-		addr == NULL ? "unknown" : addr,
+		addr[0] == '\0' ? "unknown" : addr,
 		port
 	);
 	printf("Server starting, listening on port %s\n\n", port);
 }
 
-int get_listening_socket(bool is_tcp, char *addr, char *port, struct addrinfo **servinfo, struct addrinfo **p) {
+static inline int get_listening_socket(bool is_tcp, char *addr, char *port, struct addrinfo **servinfo, struct addrinfo **p) {
 	int sockfd, rv, yes = 1;
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof hints);
