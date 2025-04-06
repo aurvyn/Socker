@@ -11,6 +11,8 @@
 #define HEADER_SIZE 32
 #define HOSTNAME_SIZE 1024
 
+// Sends a message with `sockfd` with a header containing the message length.
+// Returns true on success, false on failure.
 static inline bool relay(
 	int sockfd,
 	const char *buf,
@@ -36,6 +38,8 @@ static inline bool relay(
 	return true;
 }
 
+// Sends a message with `sockfd` to `dest_addr` with a header containing the message length.
+// Returns true on success, false on failure.
 static inline bool relay_to(
 	int sockfd,
 	const char *buf,
@@ -61,6 +65,8 @@ static inline bool relay_to(
 	return true;
 }
 
+// Receives a message with `sockfd` with a header containing the message length.
+// Returns the length of the message on success, 0 on failure.
 static inline size_t collect(
 	int sockfd,
 	char **content,
@@ -88,6 +94,8 @@ static inline size_t collect(
 	return len;
 }
 
+// Receives a message with `sockfd` from `src_addr` with a header containing the message length.
+// Returns the length of the message on success, 0 on failure.
 static inline size_t collect_from(
 	int sockfd,
 	char **content,
@@ -117,7 +125,13 @@ static inline size_t collect_from(
 	return len;
 }
 
-static inline bool readLine(char **line, size_t *size, size_t *length) {
+// Reads one line from the console, result is stored in `line` and its length in `length`.
+// Returns true on success, false on failure.
+static inline bool readLine(
+	char **line,
+	size_t *size,
+	size_t *length
+) {
 	while (1) {
 		printf("prompt> ");
 		size_t len = getline(line, size, stdin);
@@ -131,7 +145,11 @@ static inline bool readLine(char **line, size_t *size, size_t *length) {
 	}
 }
 
-static inline bool check_mode(char *mode) {
+// Returns true if the mode is TCP, false if UDP.
+// Exits with an error message if the mode is invalid.
+static inline bool check_mode(
+	char *mode
+) {
 	if (!strcmp(mode, "-u")) {
 		return false;
 	} else if (!strcmp(mode, "-t")) {
@@ -142,15 +160,21 @@ static inline bool check_mode(char *mode) {
 	}
 }
 
-// get sockaddr, IPv4 or IPv6:
-static inline void *get_in_addr(struct sockaddr *sa) {
+// Get sockaddr, IPv4 or IPv6:
+static inline void *get_in_addr(
+	struct sockaddr *sa
+) {
 	if (sa->sa_family == AF_INET) {
 		return &(((struct sockaddr_in*)sa)->sin_addr);
 	}
 	return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
-static inline void display_server_info(struct sockaddr *ai_addr, char *port) {
+// Prints server startup information.
+static inline void display_server_info(
+	struct sockaddr *ai_addr,
+	char *port
+) {
 	char hostname[HOSTNAME_SIZE], addr[INET6_ADDRSTRLEN];
 	inet_ntop(ai_addr->sa_family, get_in_addr(ai_addr), addr, sizeof addr);
 	printf("Server on host %s/%s is listening on port %s\n\n", 
@@ -161,7 +185,15 @@ static inline void display_server_info(struct sockaddr *ai_addr, char *port) {
 	printf("Server starting, listening on port %s\n\n", port);
 }
 
-static inline int get_listening_socket(bool is_tcp, char *addr, char *port, struct addrinfo **servinfo, struct addrinfo **p) {
+// Returns a listening socket for TCP or UDP.
+// `servinfo` and `p` should be freed after use.
+static inline int get_listening_socket(
+	bool is_tcp,
+	char *addr,
+	char *port,
+	struct addrinfo **servinfo,
+	struct addrinfo **p
+) {
 	int sockfd, rv, yes = 1;
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof hints);
