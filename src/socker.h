@@ -197,10 +197,10 @@ static inline int get_listening_socket(
 	struct addrinfo **servinfo,
 	struct addrinfo **p
 ) {
-	int sockfd, rv, yes = 1;
+	int sockfd, rv, yes = 1, no = 0;
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof hints);
-	hints.ai_family = AF_UNSPEC;
+	hints.ai_family = addr == NULL ? AF_INET6 : AF_UNSPEC;
 	hints.ai_socktype = is_tcp ? SOCK_STREAM : SOCK_DGRAM;
 	if (addr == NULL) hints.ai_flags = AI_PASSIVE; // use my IP
 	if ((rv = getaddrinfo(addr, port, &hints, servinfo)) != 0) {
@@ -214,7 +214,11 @@ static inline int get_listening_socket(
 		}
 		if (addr == NULL) {
 			if (is_tcp && setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
-				perror("setsockopt");
+				perror("setsockopt SO_REUSEADDR");
+				exit(1);
+			}
+			if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &no, sizeof(no)) == -1) {
+				perror("setsockopt IPV6_V6ONLY");
 				exit(1);
 			}
 			if (bind(sockfd, (*p)->ai_addr, (*p)->ai_addrlen) == -1) {
