@@ -182,7 +182,7 @@ static inline void display_server_info(
 		addr[0] == '\0' ? "unknown" : addr,
 		port
 	);
-	printf("Server starting, listening on port %s\n\n", port);
+	printf("Server starting, listening on port %s\n\n\n", port);
 }
 
 // Returns a listening socket for TCP or UDP.
