@@ -133,7 +133,7 @@ static inline bool readLine(
 	size_t *length
 ) {
 	while (1) {
-		printf("prompt> ");
+		//printf("prompt> ");
 		size_t len = getline(line, size, stdin);
 		if (len == -1) return false;
 		if (len == 1) continue;

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/epoll.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -16,7 +17,7 @@
 #define PACKET_SIZE 1024
 
 int main(int argc, char *argv[]) {
-	int sockfd, numbytes;
+	int sockfd, epoll_fd, numbytes;
 	char *message = NULL, *response = NULL;
 	struct addrinfo *servinfo, *p;
 	size_t len, size = 0;
@@ -46,12 +47,51 @@ int main(int argc, char *argv[]) {
 	// --- TCP ---
 	print_startup_tcp(argv[2], argv[3]);
 	freeaddrinfo(servinfo);
-	while (readLine(&message, &size, &len)) {
-		printf("\nSending message to server...\n\n");
-		if (!relay(sockfd, message, len, PACKET_SIZE)) break;
-		if (!strcmp(message, ";;;")) break;
-		if (!(numbytes = collect(sockfd, &response, PACKET_SIZE))) break;
-		printf("Received response from server of\n\n\"%s\"\n\n", response);
+	while (1) {
+		if ((epoll_fd = epoll_create1(0)) == -1) {
+			perror("epoll_create1");
+			exit(1);
+		}
+		// Add the client socket.
+		struct epoll_event ev, events[2];
+		ev.events = EPOLLIN;
+		ev.data.fd = sockfd;
+		if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sockfd, &ev) == -1) {
+			perror("epoll_ctl: client_fd");
+			exit(1);
+		}
+		// Add standard input.
+		ev.events = EPOLLIN;
+		ev.data.fd = STDIN_FILENO;
+		if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, STDIN_FILENO, &ev) == -1) {
+			perror("epoll_ctl: STDIN");
+			exit(1);
+		}
+		bool connected = true;
+		while (connected) {
+			int n = epoll_wait(epoll_fd, events, 2, -1);
+			if (n == -1) {
+				perror("epoll_wait");
+				exit(1);
+			}
+			for (int i = 0; i < n; i++) {
+				if (events[i].data.fd == sockfd) {
+					numbytes = collect(sockfd, &response, PACKET_SIZE);
+					if (!numbytes) break;
+					printf("Received response from server of\n\n\"%s\"\n\n", response);
+				} else if (events[i].data.fd == STDIN_FILENO) {
+					if (!readLine(&message, &size, &len)) break;
+					printf("\nSending message to server...\n\n");
+					if (!relay(sockfd, message, len, PACKET_SIZE)) break;
+					if (!strcmp(message, ";;;")) {
+						connected = false;
+						break;
+					}
+					if (!(numbytes = collect(sockfd, &response, PACKET_SIZE))) break;
+					printf("Received response from server of\n\n\"%s\"\n\n", response);
+				}
+			}
+		}
 	}
 	print_shutdown();
 	close(sockfd);

@@ -12,6 +12,7 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <ctype.h>
+#include <sys/epoll.h>
 
 #include "../socker.h"
 #include "notifier.h"
@@ -39,10 +40,11 @@ void handle_dead_processes() {
 
 int main(int argc, char *argv[]) {
 	struct addrinfo *servinfo, *p;
-	int sockfd, new_fd, numbytes;  // listen on sock_fd, new connection on new_fd
+	int sockfd, new_fd, epoll_fd, numbytes;  // listen on sock_fd, new connection on new_fd
 	struct sockaddr_storage their_addr; // connector's address information
 	socklen_t addr_len;
-	char s[INET6_ADDRSTRLEN], *response = NULL;
+	char s[INET6_ADDRSTRLEN], *message = NULL, *response = NULL;
+	size_t len, size = 0;
 
 	if (argc != 3) {
 		fprintf(stderr,"usage: server -mode <port-number>\n");
@@ -76,19 +78,57 @@ int main(int argc, char *argv[]) {
 		print_tcp_start(s);
 
 		if (!fork()) { // make child to handle client requests
+			if ((epoll_fd = epoll_create1(0)) == -1) {
+				perror("epoll_create1");
+				exit(1);
+			}
+			// Add the client socket.
+			struct epoll_event ev, events[2];
+			ev.events = EPOLLIN;
+			ev.data.fd = new_fd;
+			if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_fd, &ev) == -1) {
+				perror("epoll_ctl: client_fd");
+				exit(1);
+			}
+			// Add standard input.
+			ev.events = EPOLLIN;
+			ev.data.fd = STDIN_FILENO;
+			if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, STDIN_FILENO, &ev) == -1) {
+				perror("epoll_ctl: STDIN");
+				exit(1);
+			}
 			printf("Now listening for incoming messages...\n\n");
-			while ((numbytes = collect(new_fd, &response, PACKET_SIZE))) {
-				printf("Received the following message from client:\n\n\"%s\"\n\n", response);
-				if (!strcmp(response, ";;;")) break;
-				printf("Now sending message back having changed the string to upper case...\n\n");
-				for (int i = 0; i < numbytes; i++) {
-					response[i] = toupper(response[i]);
+			bool connected = true;
+			while (connected) {
+				int n = epoll_wait(epoll_fd, events, 2, -1);
+				if (n == -1) {
+					perror("epoll_wait");
+					exit(1);
 				}
-				relay(new_fd, response, numbytes, PACKET_SIZE);
+				for (int i = 0; i < n; i++) {
+					if (events[i].data.fd == new_fd) {
+						numbytes = collect(new_fd, &response, PACKET_SIZE);
+						if (!numbytes) break;
+						printf("Received the following message from client:\n\n\"%s\"\n\n", response);
+						if (!strcmp(response, ";;;")) {
+							connected = false;
+							break;
+						}
+						printf("Now sending message back having changed the string to upper case...\n\n");
+						for (int j = 0; j < numbytes; j++) {
+							response[j] = toupper(response[j]);
+						}
+						relay(new_fd, response, numbytes, PACKET_SIZE);
+					} else if (events[i].data.fd == STDIN_FILENO) {
+						readLine(&message, &size, &len);
+						relay(new_fd, message, len, PACKET_SIZE);
+					}
+				}
 			}
 			print_tcp_end();
 			close(new_fd);
 			free(response);
+			free(message);
 			exit(0);
 		}
 		close(new_fd);  // parent doesn't need this
