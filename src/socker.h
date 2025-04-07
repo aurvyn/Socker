@@ -218,8 +218,8 @@ static inline int get_listening_socket(
 				exit(1);
 			}
 			if (bind(sockfd, (*p)->ai_addr, (*p)->ai_addrlen) == -1) {
-				close(sockfd);
 				perror("server: bind");
+				close(sockfd);
 				continue;
 			}
 		} else if (is_tcp && connect(sockfd, (*p)->ai_addr, (*p)->ai_addrlen)) {
@@ -231,7 +231,7 @@ static inline int get_listening_socket(
 	}
 	if (addr == NULL) {
 		display_server_info((*p)->ai_addr, port);
-		if (p == NULL) {
+		if (*p == NULL) {
 			fprintf(stderr, "server: failed to bind\n");
 			exit(1);
 		}
@@ -240,7 +240,7 @@ static inline int get_listening_socket(
 			exit(1);
 		}
 	} else {
-		if (p == NULL) {
+		if (*p == NULL) {
 			fprintf(stderr, "client: failed to connect\n");
 			exit(1);
 		}
