@@ -97,7 +97,8 @@ int main(int argc, char *argv[]) {
 				perror("epoll_ctl: STDIN");
 				exit(1);
 			}
-			printf("Now listening for incoming messages...\n\n");
+			printf("Now listening for incoming messages...\n\nserver> ");
+			fflush(stdout);
 			bool connected = true;
 			while (connected) {
 				int n = epoll_wait(epoll_fd, events, 2, -1);
@@ -109,18 +110,21 @@ int main(int argc, char *argv[]) {
 					if (events[i].data.fd == new_fd) {
 						numbytes = collect(new_fd, &response, PACKET_SIZE);
 						if (!numbytes) break;
-						printf("Received the following message from client:\n\n\"%s\"\n\n", response);
+						printf("\rReceived the following message from client:\n\n\"%s\"\n\n", response);
 						if (!strcmp(response, ";;;")) {
 							connected = false;
 							break;
 						}
-						printf("Now sending message back having changed the string to upper case...\n\n");
+						printf("Now sending message back having changed the string to upper case...\n\nserver> ");
+						fflush(stdout);
 						for (int j = 0; j < numbytes; j++) {
 							response[j] = toupper(response[j]);
 						}
 						relay(new_fd, response, numbytes, PACKET_SIZE);
 					} else if (events[i].data.fd == STDIN_FILENO) {
 						readLine(&message, &size, &len);
+						printf("\nserver> ");
+						fflush(stdout);
 						relay(new_fd, message, len, PACKET_SIZE);
 					}
 				}

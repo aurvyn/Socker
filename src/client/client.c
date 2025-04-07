@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
 	if (!is_tcp) { // --- UDP ---
 		print_startup_udp(argv[2], argv[3]);
 		while (readLine(&message, &size, &len)) {
-			printf("\nSending message to server...\n\n");
+			printf("\nSending message to server...\n\nprompt> ");
 			relay_to(sockfd, message, len, PACKET_SIZE, p->ai_addr, p->ai_addrlen);
 			if (!strcmp(message, ";;;")) break;
 		}
@@ -77,7 +77,8 @@ int main(int argc, char *argv[]) {
 			if (events[i].data.fd == sockfd) {
 				numbytes = collect(sockfd, &response, PACKET_SIZE);
 				if (!numbytes) break;
-				printf("Received response from server of\n\n\"%s\"\n\n", response);
+				printf("\rReceived response from server of\n\n\"%s\"\n\nprompt> ", response);
+				fflush(stdout);
 			} else if (events[i].data.fd == STDIN_FILENO) {
 				if (!readLine(&message, &size, &len)) break;
 				printf("\nSending message to server...\n\n");
@@ -87,7 +88,8 @@ int main(int argc, char *argv[]) {
 					break;
 				}
 				if (!(numbytes = collect(sockfd, &response, PACKET_SIZE))) break;
-				printf("Received response from server of\n\n\"%s\"\n\n", response);
+				printf("Received response from server of\n\n\"%s\"\n\nprompt> ", response);
+				fflush(stdout);
 			}
 		}
 	}
