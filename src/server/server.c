@@ -11,8 +11,9 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <stdbool.h>
-#include <ctype.h>
 #include <sys/epoll.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #include "../socker.h"
 #include "notifier.h"
@@ -39,6 +40,7 @@ void handle_dead_processes() {
 }
 
 int main(int argc, char *argv[]) {
+	struct stat st;
 	struct addrinfo *servinfo, *p;
 	int sockfd, new_fd, epoll_fd, numbytes;  // listen on sock_fd, new connection on new_fd
 	struct sockaddr_storage their_addr; // connector's address information
@@ -110,17 +112,22 @@ int main(int argc, char *argv[]) {
 					if (events[i].data.fd == new_fd) {
 						numbytes = collect(new_fd, &response, PACKET_SIZE);
 						if (!numbytes) break;
-						printf("\rReceived the following message from client:\n\n\"%s\"\n\n", response);
 						if (!strcmp(response, ";;;")) {
 							connected = false;
 							break;
 						}
-						printf("Now sending message back having changed the string to upper case...\n\nserver> ");
-						fflush(stdout);
-						for (int j = 0; j < numbytes; j++) {
-							response[j] = toupper(response[j]);
+						if (strncmp(response, "iWant", 5)) {
+							relay(new_fd, "Invalid command!", 17, PACKET_SIZE);
+							continue;
 						}
-						relay(new_fd, response, numbytes, PACKET_SIZE);
+						int file = open(response, O_RDONLY);
+						if (file == -1) {
+							relay(new_fd, "File not found!", 16, PACKET_SIZE);
+							continue;
+						}
+						fstat(file, &st);
+						relay(new_fd, response, st.st_size, PACKET_SIZE);
+						close(file);
 					} else if (events[i].data.fd == STDIN_FILENO) {
 						readLine(&message, &size, &len);
 						printf("\nserver> ");

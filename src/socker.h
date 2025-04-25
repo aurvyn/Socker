@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <sys/sendfile.h>
 
 #define HEADER_SIZE 32
 #define HOSTNAME_SIZE 1024
@@ -34,6 +35,26 @@ static inline bool relay(
 			perror("relay: send");
 			return false;
 		}
+	}
+	return true;
+}
+
+static inline bool relay_file(
+	int sockfd,
+	int fd,
+	int len,
+	size_t packet_size
+) {
+	char header[HEADER_SIZE];
+	sprintf(header, "%i", len);
+	if (send(sockfd, header, HEADER_SIZE, 0) == -1) {
+		perror("relay_file: send (header)");
+		return false;
+	}
+	ssize_t sent = sendfile(sockfd, fd, 0, len);
+	if (sent == -1) {
+		perror("relay_file: sendfile");
+		return false;
 	}
 	return true;
 }
