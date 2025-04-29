@@ -40,9 +40,8 @@ void handle_dead_processes() {
 }
 
 int main(int argc, char *argv[]) {
-	struct stat st;
 	struct addrinfo *servinfo, *p;
-	int sockfd, new_fd, epoll_fd, numbytes;  // listen on sock_fd, new connection on new_fd
+	int sockfd, new_sockfd, epoll_fd, numbytes;  // listen on sock_fd, new connection on new_fd
 	struct sockaddr_storage their_addr; // connector's address information
 	socklen_t addr_len;
 	char s[INET6_ADDRSTRLEN], *message = NULL, *response = NULL;
@@ -70,8 +69,8 @@ int main(int argc, char *argv[]) {
 
 	while (1) {  // main accept() loop
 		addr_len = sizeof their_addr;
-		new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &addr_len);
-		if (new_fd == -1) {
+		new_sockfd = accept(sockfd, (struct sockaddr *)&their_addr, &addr_len);
+		if (new_sockfd == -1) {
 			perror("accept");
 			continue;
 		}
@@ -87,8 +86,8 @@ int main(int argc, char *argv[]) {
 			// Add the client socket.
 			struct epoll_event ev, events[2];
 			ev.events = EPOLLIN;
-			ev.data.fd = new_fd;
-			if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_fd, &ev) == -1) {
+			ev.data.fd = new_sockfd;
+			if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, new_sockfd, &ev) == -1) {
 				perror("epoll_ctl: client_fd");
 				exit(1);
 			}
@@ -109,39 +108,35 @@ int main(int argc, char *argv[]) {
 					exit(1);
 				}
 				for (int i = 0; i < n; i++) {
-					if (events[i].data.fd == new_fd) {
-						numbytes = collect(new_fd, &response, PACKET_SIZE);
+					if (events[i].data.fd == new_sockfd) {
+						numbytes = collect(new_sockfd, &response, PACKET_SIZE);
 						if (!numbytes) break;
 						if (!strcmp(response, ";;;")) {
 							connected = false;
 							break;
 						}
-						if (strncmp(response, "iWant", 5)) {
-							relay(new_fd, "Invalid command!", 17, PACKET_SIZE);
-							continue;
+						if (!strncmp(response, "iWant", 5)) {
+							server_handle_want(response + 6, new_sockfd);
 						}
-						int file = open(response, O_RDONLY);
-						if (file == -1) {
-							relay(new_fd, "File not found!", 16, PACKET_SIZE);
-							continue;
+						if (!strncmp(response, "uTake", 5)) {
+							server_handle_take(response + 6, new_sockfd, PACKET_SIZE);
 						}
-						fstat(file, &st);
-						relay(new_fd, response, st.st_size, PACKET_SIZE);
-						close(file);
+						ResponseType response_type = ERROR_INVALID_COMMAND;
+						send(new_sockfd, &response_type, sizeof(ResponseType), 0);
 					} else if (events[i].data.fd == STDIN_FILENO) {
 						readLine(&message, &size, &len);
 						printf("\nserver> ");
 						fflush(stdout);
-						relay(new_fd, message, len, PACKET_SIZE);
+						relay(new_sockfd, message, len, PACKET_SIZE);
 					}
 				}
 			}
 			print_tcp_end();
-			close(new_fd);
+			close(new_sockfd);
 			free(response);
 			free(message);
 			exit(0);
 		}
-		close(new_fd);  // parent doesn't need this
+		close(new_sockfd);  // parent doesn't need this
 	}
 }

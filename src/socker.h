@@ -1,5 +1,6 @@
 #pragma once
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -8,9 +9,18 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <sys/sendfile.h>
+#include <sys/stat.h>
 
 #define HEADER_SIZE 32
 #define HOSTNAME_SIZE 1024
+
+typedef enum ResponseType {
+	SUCCESS_READY,
+	SUCCESS_FILE_FOUND,
+	ERROR_INVALID_COMMAND,
+	ERROR_NO_SUCH_FILE,
+	ERROR_UNKNOWN
+} ResponseType;
 
 // Sends a message with `sockfd` with a header containing the message length.
 // Returns true on success, false on failure.
@@ -41,17 +51,17 @@ static inline bool relay(
 
 static inline bool relay_file(
 	int sockfd,
-	int fd,
-	int len,
-	size_t packet_size
+	int fd
 ) {
 	char header[HEADER_SIZE];
-	sprintf(header, "%i", len);
+	struct stat st;
+	fstat(fd, &st);
+	sprintf(header, "%zu", st.st_size);
 	if (send(sockfd, header, HEADER_SIZE, 0) == -1) {
 		perror("relay_file: send (header)");
 		return false;
 	}
-	ssize_t sent = sendfile(sockfd, fd, 0, len);
+	ssize_t sent = sendfile(sockfd, fd, NULL, st.st_size);
 	if (sent == -1) {
 		perror("relay_file: sendfile");
 		return false;
@@ -75,9 +85,11 @@ static inline bool relay_to(
 		perror("relay_to: sendto (header)");
 		return false;
 	}
-	int numbytes;
+	int remaining, numbytes;
 	for (size_t offset = 0; offset < len; offset += packet_size) {
-		numbytes = sendto(sockfd, buf + offset, packet_size, 0, dest_addr, addrlen);
+		remaining = len - offset;
+		size_t to_send = remaining < packet_size ? remaining : packet_size;
+		numbytes = sendto(sockfd, buf + offset, to_send, 0, dest_addr, addrlen);
 		if (numbytes == -1) {
 			perror("relay_to: sendto");
 			return false;
@@ -115,6 +127,35 @@ static inline size_t collect(
 	return len;
 }
 
+static inline size_t collect_file(
+	int sockfd,
+	FILE* file,
+	size_t packet_size
+) {
+	char header[HEADER_SIZE], buffer[packet_size];
+	int numbytes = recv(sockfd, header, HEADER_SIZE, 0);
+	if (numbytes == -1) {
+		perror("collect_file: recv (header)");
+		return 0;
+	}
+	header[HEADER_SIZE - 1] = '\0';
+	size_t remaining, to_read, len = atoi(header);
+	for (size_t offset = 0; offset < len; offset += packet_size) {
+		remaining = len - offset;
+		to_read = remaining < packet_size ? remaining : packet_size;
+		numbytes = recv(sockfd, buffer, to_read, 0);
+		if (numbytes == -1) {
+			perror("collect: recv");
+			return 0;
+		}
+		if (fwrite(buffer, 1, numbytes, file) != numbytes) {
+			perror("collect_file: fwrite");
+			return 0;
+		}
+	}
+	return len;
+}
+
 // Receives a message with `sockfd` from `src_addr` with a header containing the message length.
 // Returns the length of the message on success, 0 on failure.
 static inline size_t collect_from(
@@ -144,6 +185,118 @@ static inline size_t collect_from(
 	}
 	(*content)[len] = '\0';
 	return len;
+}
+
+static inline bool server_handle_want( // iWant
+	const char *file_name,
+	int sockfd
+) {
+	ResponseType response_type;
+	int fd = open(file_name, O_RDONLY);
+	if (fd == -1) {
+		response_type = ERROR_NO_SUCH_FILE;
+		send(sockfd, &response_type, sizeof(ResponseType), 0);
+		return false;
+	}
+	response_type = SUCCESS_FILE_FOUND;
+	send(sockfd, &response_type, sizeof(ResponseType), 0);
+	relay_file(sockfd, fd);
+	close(fd);
+	return true;
+}
+
+static inline bool client_handle_want( // iWant
+	const char *command,
+	int sockfd,
+	size_t packet_size
+) {
+	relay(sockfd, command, strlen(command), packet_size);
+	ResponseType response_type;
+	recv(sockfd, &response_type, sizeof(ResponseType), 0);
+	switch (response_type) {
+		case SUCCESS_FILE_FOUND:
+			break;
+		case ERROR_NO_SUCH_FILE:
+			fprintf(stderr, "Error: No such file found on server.\n");
+			return false;
+		case ERROR_INVALID_COMMAND:
+			fprintf(stderr, "Error: Invalid command parsed by server.\n");
+			return false;
+		case ERROR_UNKNOWN:
+			fprintf(stderr, "Error: Unknown error from server.\n");
+			return false;
+		default:
+			fprintf(stderr, "Error: Unexpected response from server.\n");
+			return false;
+	}
+	int fd = open(command + 6, O_CREAT | O_WRONLY | O_TRUNC | O_APPEND, 0644);
+	if (fd == -1) {
+		return false;
+	}
+	FILE *file = fdopen(fd, "a");
+	if (!file) {
+		close(fd);
+		return false;
+	}
+	collect_file(sockfd, file, packet_size);
+	fclose(file);
+	return true;
+}
+
+static inline bool server_handle_take( // uTake
+	const char *file_name,
+	int sockfd,
+	size_t packet_size
+) {
+	ResponseType response_type;
+	int fd = open(file_name, O_CREAT | O_WRONLY | O_TRUNC | O_APPEND, 0644);
+	if (fd == -1) {
+		response_type = ERROR_UNKNOWN;
+		send(sockfd, &response_type, sizeof(ResponseType), 0);
+		return false;
+	}
+	FILE *file = fdopen(fd, "a");
+	if (!file) {
+		response_type = ERROR_UNKNOWN;
+		send(sockfd, &response_type, sizeof(ResponseType), 0);
+		close(fd);
+		return false;
+	}
+	response_type = SUCCESS_READY;
+	send(sockfd, &response_type, sizeof(ResponseType), 0);
+	collect_file(sockfd, file, packet_size);
+	fclose(file);
+	return true;
+}
+
+static inline bool client_handle_take( // uTake
+	const char *command,
+	int sockfd,
+	size_t packet_size
+) {
+	relay(sockfd, command, strlen(command), packet_size);
+	ResponseType response_type;
+	recv(sockfd, &response_type, sizeof(ResponseType), 0);
+	switch (response_type) {
+		case SUCCESS_READY:
+			break;
+		case ERROR_INVALID_COMMAND:
+			fprintf(stderr, "Error: Invalid command parsed by server.\n");
+			return false;
+		case ERROR_UNKNOWN:
+			fprintf(stderr, "Error: Unknown error from server.\n");
+			return false;
+		default:
+			fprintf(stderr, "Error: Unexpected response from server.\n");
+			return false;
+	}
+	int fd = open(command + 6, O_RDONLY);
+	if (fd == -1) {
+		return false;
+	}
+	relay_file(sockfd, fd);
+	close(fd);
+	return true;
 }
 
 // Reads one line from the console, result is stored in `line` and its length in `length`.

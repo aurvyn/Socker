@@ -83,12 +83,20 @@ int main(int argc, char *argv[]) {
 				if (!readLine(&message, &size, &len)) break;
 				printf("\nSending message to server...\n\n");
 				if (!relay(sockfd, message, len, PACKET_SIZE)) break;
+				if (!strncmp(message, "iWant", 5)) {
+					client_handle_want(message + 6, sockfd, PACKET_SIZE);
+					break;
+				}
+				if (!strncmp(message, "uTake", 5)) {
+					client_handle_take(message + 6, sockfd, PACKET_SIZE);
+					break;
+				}
 				if (!strcmp(message, ";;;")) {
 					connected = false;
 					break;
 				}
-				if (!(numbytes = collect(sockfd, &response, PACKET_SIZE))) break;
-				printf("Received response from server of\n\n\"%s\"\n\nprompt> ", response);
+				ResponseType response_type = ERROR_INVALID_COMMAND;
+				printf("Invalid command of \n\n\"%s\"\n\nprompt> ", message);
 				fflush(stdout);
 			}
 		}
