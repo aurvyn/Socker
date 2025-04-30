@@ -75,28 +75,23 @@ int main(int argc, char *argv[]) {
 		}
 		for (int i = 0; i < n; i++) {
 			if (events[i].data.fd == sockfd) {
+				//printf("\nReceiving message from server...\n\n");
 				numbytes = collect(sockfd, &response, PACKET_SIZE);
-				if (!numbytes) break;
-				printf("\rReceived response from server of\n\n\"%s\"\n\nprompt> ", response);
-				fflush(stdout);
+				printf("\nReceived the following message from server:\n\n\"%s\"\n\n", response);
+				if (!numbytes) continue;
+				printf("\nReceived the following message from server:\n\n\"%s\"\n\n", response);
+				if (!server_handle_commands(response, sockfd, PACKET_SIZE)) {
+					continue;
+				}
 			} else if (events[i].data.fd == STDIN_FILENO) {
-				if (!readLine(&message, &size, &len)) break;
-				if (!relay(sockfd, message, len, PACKET_SIZE)) break;
-				if (!strncmp(message, "iWant", 5)) {
-					print_iWant_status(client_handle_want(message + 6, sockfd, PACKET_SIZE));
-					break;
-				}
-				if (!strncmp(message, "uTake", 5)) {
-					print_uTake_status(client_handle_take(message + 6, sockfd, PACKET_SIZE));
-					break;
-				}
+				if (!readLine(&message, &size, &len)) continue;
 				if (!strcmp(message, ";;;")) {
 					connected = false;
 					break;
 				}
-				ResponseType response_type = ERROR_INVALID_COMMAND;
-				printf("Invalid command of \n\n\"%s\"\n\nprompt> ", message);
-				fflush(stdout);
+				if (!client_handle_commands(message, sockfd, PACKET_SIZE)) {
+					continue;
+				}
 			}
 		}
 	}

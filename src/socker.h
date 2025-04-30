@@ -191,6 +191,7 @@ static inline bool server_handle_want( // iWant
 	const char *file_name,
 	int sockfd
 ) {
+	printf("\nReceiving iWant request...%s\n\n", file_name);
 	ResponseType response_type;
 	int fd = open(file_name, O_RDONLY);
 	if (fd == -1) {
@@ -210,24 +211,26 @@ static inline bool client_handle_want( // iWant
 	int sockfd,
 	size_t packet_size
 ) {
-	printf("\nSending iWant request to server...\n\n");
+	printf("\nSending iWant request...\n\n");
 	relay(sockfd, command, strlen(command), packet_size);
+	printf("Waiting for response from server...\n\n");
 	ResponseType response_type;
 	recv(sockfd, &response_type, sizeof(ResponseType), 0);
 	switch (response_type) {
 		case SUCCESS_FILE_FOUND:
+			printf("File found on the other side, receiving...\n");
 			break;
 		case ERROR_NO_SUCH_FILE:
-			fprintf(stderr, "Error: No such file found on server.\n");
+			fprintf(stderr, "Error: No such file found on the other side.\n");
 			return false;
 		case ERROR_INVALID_COMMAND:
-			fprintf(stderr, "Error: Invalid command parsed by server.\n");
+			fprintf(stderr, "Error: Invalid command parsed on the other side.\n");
 			return false;
 		case ERROR_UNKNOWN:
-			fprintf(stderr, "Error: Unknown error from server.\n");
+			fprintf(stderr, "Error: Unknown error from the other side.\n");
 			return false;
 		default:
-			fprintf(stderr, "Error: Unexpected response from server.\n");
+			fprintf(stderr, "Error: Unexpected response from the other side.\n");
 			return false;
 	}
 	int fd = open(command + 6, O_CREAT | O_WRONLY | O_TRUNC | O_APPEND, 0644);
@@ -283,13 +286,13 @@ static inline bool client_handle_take( // uTake
 		case SUCCESS_READY:
 			break;
 		case ERROR_INVALID_COMMAND:
-			fprintf(stderr, "Error: Invalid command parsed by server.\n");
+			fprintf(stderr, "Error: Invalid command parsed by the other side.\n");
 			return false;
 		case ERROR_UNKNOWN:
-			fprintf(stderr, "Error: Unknown error from server.\n");
+			fprintf(stderr, "Error: Unknown error from the other side.\n");
 			return false;
 		default:
-			fprintf(stderr, "Error: Unexpected response from server.\n");
+			fprintf(stderr, "Error: Unexpected response from the other side.\n");
 			return false;
 	}
 	int fd = open(command + 6, O_RDONLY);
@@ -299,6 +302,54 @@ static inline bool client_handle_take( // uTake
 	relay_file(sockfd, fd);
 	close(fd);
 	return true;
+}
+
+static inline void print_command_status(const char *command, bool is_successful, bool is_server) {
+	if (is_successful) {
+		printf("\r%s executed successfully.\n\n", command);
+	} else {
+		printf("\r%s command failed.\n\n", command);
+	}
+	printf(is_server ? "server> " : "prompt> ");
+	fflush(stdout);
+}
+
+static inline bool server_handle_commands(
+	const char *command,
+	int sockfd,
+	size_t packet_size
+) {
+	bool status;
+	if (!strncmp(command, "iWant", 5)) {
+		print_command_status("iWant", status = server_handle_want(command + 6, sockfd), true);
+		return status;
+	}
+	if (!strncmp(command, "uTake", 5)) {
+		print_command_status("uTake", status = server_handle_take(command + 6, sockfd, packet_size), true);
+		return status;
+	}
+	ResponseType response_type = ERROR_INVALID_COMMAND;
+	send(sockfd, &response_type, sizeof(ResponseType), 0);
+	return false;
+}
+
+static inline bool client_handle_commands(
+	const char *command,
+	int sockfd,
+	size_t packet_size
+) {
+	bool status;
+	if (!strncmp(command, "iWant", 5)) {
+		print_command_status("iWant", status = client_handle_want(command, sockfd, packet_size), false);
+		return status;
+	}
+	if (!strncmp(command, "uTake", 5)) {
+		print_command_status("uTake", status = client_handle_take(command, sockfd, packet_size), false);
+		return status;
+	}
+	printf("Invalid command of \n\n\"%s\"\n\nprompt> ", command);
+	fflush(stdout);
+	return false;
 }
 
 // Reads one line from the console, result is stored in `line` and its length in `length`.

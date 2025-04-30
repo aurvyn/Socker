@@ -98,8 +98,7 @@ int main(int argc, char *argv[]) {
 				perror("epoll_ctl: STDIN");
 				exit(1);
 			}
-			printf("Now listening for incoming messages...\n\nserver> ");
-			fflush(stdout);
+			print_connection_start();
 			bool connected = true;
 			while (connected) {
 				int n = epoll_wait(epoll_fd, events, 2, -1);
@@ -110,26 +109,19 @@ int main(int argc, char *argv[]) {
 				for (int i = 0; i < n; i++) {
 					if (events[i].data.fd == new_sockfd) {
 						numbytes = collect(new_sockfd, &response, PACKET_SIZE);
-						if (!numbytes) break;
+						if (!numbytes) continue;
 						if (!strcmp(response, ";;;")) {
 							connected = false;
 							break;
 						}
-						if (!strncmp(response, "iWant", 5)) {
-							print_iWant_status(server_handle_want(response + 6, new_sockfd));
+						if (!server_handle_commands(response, new_sockfd, PACKET_SIZE)) {
 							continue;
 						}
-						if (!strncmp(response, "uTake", 5)) {
-							print_uTake_status(server_handle_take(response + 6, new_sockfd, PACKET_SIZE));
-							continue;
-						}
-						ResponseType response_type = ERROR_INVALID_COMMAND;
-						send(new_sockfd, &response_type, sizeof(ResponseType), 0);
 					} else if (events[i].data.fd == STDIN_FILENO) {
-						readLine(&message, &size, &len);
-						printf("\nserver> ");
-						fflush(stdout);
-						relay(new_sockfd, message, len, PACKET_SIZE);
+						if (!readLine(&message, &size, &len)) continue;
+						if (!client_handle_commands(message, new_sockfd, PACKET_SIZE)) {
+							continue;
+						}
 					}
 				}
 			}
