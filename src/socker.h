@@ -13,6 +13,7 @@
 
 #define HEADER_SIZE 32
 #define HOSTNAME_SIZE 1024
+#define PATH_MAX 4096
 
 typedef enum ResponseType {
 	SUCCESS_READY,
@@ -21,6 +22,29 @@ typedef enum ResponseType {
 	ERROR_NO_SUCH_FILE,
 	ERROR_UNKNOWN
 } ResponseType;
+
+// Reads one line from the console, result is stored in `line` and its length in `length`.
+// Returns true on success, false on failure.
+static inline bool readLine(
+	char **line,
+	size_t *size,
+	size_t *length
+) {
+	while (1) {
+		size_t len = getline(line, size, stdin);
+		if (len == -1) return false;
+		if (len == 1) {
+			printf("prompt> ");
+			fflush(stdout);
+			continue;
+		}
+		if ((*line)[len - 1] == '\n') {
+			(*line)[--len] = '\0';
+		}
+		*length = len;
+		return true;
+	}
+}
 
 // Sends a message with `sockfd` with a header containing the message length.
 // Returns true on success, false on failure.
@@ -233,7 +257,19 @@ static inline bool client_handle_want( // iWant
 			fprintf(stderr, "Error: Unexpected response from the other side.\n");
 			return false;
 	}
-	int fd = open(command + 6, O_CREAT | O_WRONLY | O_TRUNC | O_APPEND, 0644);
+	printf("What directory would you like to save the file in?\n\n> ");
+	fflush(stdout);
+	char *dir = NULL;
+	size_t len, size = 0;
+	if (!readLine(&dir, &size, &len)) {
+		free(dir);
+		return false;
+	}
+	char path[PATH_MAX];
+	int needed = snprintf(path, PATH_MAX, "%s/%s", dir, command + 6);
+	printf("\nSaving file to %s...\n\n", path);
+	int fd = open(path, O_CREAT | O_WRONLY | O_TRUNC | O_APPEND, 0644);
+	free(dir);
 	if (fd == -1) {
 		return false;
 	}
@@ -350,29 +386,6 @@ static inline bool client_handle_commands(
 	printf("Invalid command of \n\n\"%s\"\n\nprompt> ", command);
 	fflush(stdout);
 	return false;
-}
-
-// Reads one line from the console, result is stored in `line` and its length in `length`.
-// Returns true on success, false on failure.
-static inline bool readLine(
-	char **line,
-	size_t *size,
-	size_t *length
-) {
-	while (1) {
-		size_t len = getline(line, size, stdin);
-		if (len == -1) return false;
-		if (len == 1) {
-			printf("prompt> ");
-			fflush(stdout);
-			continue;
-		}
-		if ((*line)[len - 1] == '\n') {
-			(*line)[--len] = '\0';
-		}
-		*length = len;
-		return true;
-	}
 }
 
 // Returns true if the mode is TCP, false if UDP.
