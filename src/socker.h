@@ -210,6 +210,7 @@ static inline bool client_handle_want( // iWant
 	int sockfd,
 	size_t packet_size
 ) {
+	printf("\nSending iWant request to server...\n\n");
 	relay(sockfd, command, strlen(command), packet_size);
 	ResponseType response_type;
 	recv(sockfd, &response_type, sizeof(ResponseType), 0);
@@ -274,6 +275,7 @@ static inline bool client_handle_take( // uTake
 	int sockfd,
 	size_t packet_size
 ) {
+	printf("\nSending uTake request to server...\n\n");
 	relay(sockfd, command, strlen(command), packet_size);
 	ResponseType response_type;
 	recv(sockfd, &response_type, sizeof(ResponseType), 0);

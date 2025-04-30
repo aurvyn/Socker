@@ -81,14 +81,13 @@ int main(int argc, char *argv[]) {
 				fflush(stdout);
 			} else if (events[i].data.fd == STDIN_FILENO) {
 				if (!readLine(&message, &size, &len)) break;
-				printf("\nSending message to server...\n\n");
 				if (!relay(sockfd, message, len, PACKET_SIZE)) break;
 				if (!strncmp(message, "iWant", 5)) {
-					client_handle_want(message + 6, sockfd, PACKET_SIZE);
+					print_iWant_status(client_handle_want(message + 6, sockfd, PACKET_SIZE));
 					break;
 				}
 				if (!strncmp(message, "uTake", 5)) {
-					client_handle_take(message + 6, sockfd, PACKET_SIZE);
+					print_uTake_status(client_handle_take(message + 6, sockfd, PACKET_SIZE));
 					break;
 				}
 				if (!strcmp(message, ";;;")) {

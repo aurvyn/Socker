@@ -116,10 +116,12 @@ int main(int argc, char *argv[]) {
 							break;
 						}
 						if (!strncmp(response, "iWant", 5)) {
-							server_handle_want(response + 6, new_sockfd);
+							print_iWant_status(server_handle_want(response + 6, new_sockfd));
+							continue;
 						}
 						if (!strncmp(response, "uTake", 5)) {
-							server_handle_take(response + 6, new_sockfd, PACKET_SIZE);
+							print_uTake_status(server_handle_take(response + 6, new_sockfd, PACKET_SIZE));
+							continue;
 						}
 						ResponseType response_type = ERROR_INVALID_COMMAND;
 						send(new_sockfd, &response_type, sizeof(ResponseType), 0);
