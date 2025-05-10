@@ -151,6 +151,17 @@ static inline size_t collect(
 	return len;
 }
 
+/* returns 1 when full header block seen, 0 otherwise */
+static inline int collect_request(int fd, char *buf, size_t cap, size_t *len) {
+	int n;
+	while ((n = recv(fd, buf + *len, cap - *len, 0)) > 0) {
+		*len += n;
+		if (*len >= 4 && memmem(buf, *len, "\r\n\r\n", 4))
+			return 1;
+	}
+    return n == 0 ? -1 : 0;   /* -1 = EOF, 0 = need more */
+}
+
 static inline size_t collect_file(
 	int sockfd,
 	FILE* file,
@@ -437,6 +448,8 @@ static inline int get_listening_socket(
 	struct addrinfo **servinfo,
 	struct addrinfo **p
 ) {
+	printf("addr: %s\n", addr);
+	printf("port: %s\n", port);
 	int sockfd, rv, yes = 1, no = 0;
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof hints);
