@@ -1,4 +1,3 @@
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -28,35 +27,50 @@ int parse_host_port(
 	char *buf,
 	size_t len,
 	char **host,
-	char **port
+	char **path,
+	char **headers
 ) {
-	printf("buf: %s\n", buf);
-	char *end = memmem(buf, len, "\r\n\r\n", 4);
-	if (!end) return -1;
-
-	char *h = buf, host_len = 0;
-	while ((h = memmem(h, end - h, "\nHost:", 6))) {
-		h += 6;
-		while (isspace((unsigned char)*h)) ++h;
-		while (*(h + host_len) != '\n') ++host_len;
-
-		char *colon = memchr(h, ':', host_len);
-		char *eol = memchr(h, '\r', host_len);
-
-		if (colon) {
-            *colon = '\0';
-            *port = "80";
-            char *p = colon + 1;
-            while (p < eol && isdigit((unsigned char)*p)) ++p;
-            *p = '\0';
-        } else {
-            *eol  = '\0';
-            *port = "80";
-        }
-        *host = h;
-		return 0;
+	if (strncmp(buf, "GET", 3)) {
+		fprintf(stderr, "Server Error 501: Request Not Implemented (only GET is supported)\n");
+		return -1;
 	}
-	return -1;
+	char *end = strstr(buf, "\r\n\r\n");
+	if (!end) {
+		fprintf(stderr, "Server Error 400: Bad Request (missing 2 blank lines)\n");
+		return -1;
+	}
+	*host = buf + 11;
+	char *host_end = strchr(*host, '/');
+	*host_end = '\0';
+
+	*path = host_end+1;
+	char *path_end = strchr(*path, ' ');
+	*path_end = '\0';
+
+	*headers = strchr(path_end+1, '\r');
+	if (!*headers) {
+		fprintf(stderr, "Server Error 400: Bad Request (no headers)\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+void close_connection(char *buf) {
+	char *pos, temp[1024];
+	int i = 0;
+	if ((pos = strstr(buf, "\nConnection: ")) != NULL) {
+		pos[12] = '\0';
+		char *pos_end = strchr(pos+13, '\r');
+		*pos_end = '\0';
+		sprintf(temp, "%s close\r%s", buf, pos_end+1);
+		sprintf(buf, "%s", temp);
+	} else {
+		char *second_line = strchr(buf, '\n');
+		*second_line = '\0';
+		sprintf(temp, "%s\nConnection: close\r\n%s", buf, second_line+1);
+		sprintf(buf, "%s", temp);
+	}
 }
 
 static void make_nonblocking(int fd) {
@@ -87,7 +101,7 @@ int main(int argc, char *argv[]) {
 	int clientfd, new_clientfd, serverfd, epoll_fd, numbytes;  // listen on sock_fd, new connection on new_fd
 	struct sockaddr_storage their_addr; // connector's address information
 	socklen_t addr_len;
-	char s[INET6_ADDRSTRLEN], buf[PACKET_SIZE], headers[HEADER_CAP], *server_host, *server_port;
+	char s[INET6_ADDRSTRLEN], buf[PACKET_SIZE], headers[HEADER_CAP], *host, *path, *serv_headers;
 	size_t len = 0, size = 0, nread;
 
 	if (argc != 2) {
@@ -113,10 +127,17 @@ int main(int argc, char *argv[]) {
 			make_nonblocking(new_clientfd);
 			size_t len = 0;
 			collect_request(new_clientfd, headers, HEADER_CAP, &len);
-			parse_host_port(headers, len, &server_host, &server_port);
-			serverfd = get_listening_socket(true, server_host, server_port, &servinfo, &p);
+
+			printf("\nReceived request: \n%s\n", headers);
+
+			close_connection(headers);
+			parse_host_port(headers, len, &host, &path, &serv_headers);
+			serverfd = get_listening_socket(true, host, "80", &servinfo, &p);
 			make_nonblocking(serverfd);
 			freeaddrinfo(servinfo);
+			sprintf(headers, "GET /%s HTTP/1.0%s", path, serv_headers);
+
+			printf("Sending request: \n%s\n", headers);
 
 			if (send(serverfd, headers, len, 0) != len) {
 				perror("send initial request");
@@ -151,18 +172,30 @@ int main(int argc, char *argv[]) {
 				for (int i = 0; i < n; i++) {
 					if (events[i].events & EPOLLIN) {
 						if (events[i].data.fd == new_clientfd) {
-							while ((nread = recv(new_clientfd, buf, PACKET_SIZE, 0)) > 0) {
+							static size_t hdr_len = 0;
+							int status = collect_request(new_clientfd, buf, HEADER_CAP, &hdr_len);
+							close_connection(buf);
+							if (status == 1) {
 								if (send(serverfd, buf, nread, 0) == -1) {
 									connected = false;
-									break;
 								}
+								hdr_len = 0;
+							}
+							else if (status == -1) {
+								close(new_clientfd);
 							}
 						} else {
-							while ((nread = recv(serverfd, buf, PACKET_SIZE, 0)) > 0) {
+							static size_t hdr_len = 0;
+							int status = collect_request(serverfd, buf, HEADER_CAP, &hdr_len);
+							close_connection(buf);
+							if (status == 1) {
 								if (send(new_clientfd, buf, nread, 0) == -1) {
 									connected = false;
-									break;
 								}
+								hdr_len = 0;
+							}
+							else if (status == -1) {
+								close(serverfd);
 							}
 						}
 						if (nread == 0 || (nread < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
